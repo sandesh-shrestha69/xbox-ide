@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox Controller IDE</title>
+    <style>
+        #radial-menu {
+            display: none;
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: white;
+            border: 1px solid black;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="code-editor-container">
+        <textarea id="code-editor"></textarea>
+    </div>
+    <div id="radial-menu">Function, If/Else, Loop, Class</div>
+
+    <script src="controllerInput.js"></script>
+    <script src="uiManager.js"></script>
+    <script src="codeEditor.js"></script>
+    <script src="index.js"></script>
+</body>
+</html>

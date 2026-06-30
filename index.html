@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox Controller IDE</title>
+    <link rel="stylesheet" href="prism.css">
+</head>
+<body>
+    <div id="code-editor-container"></div>
+    <script src="constants.js"></script>
+    <script src="controllerInput.js"></script>
+    <script src="uiManager.js"></script>
+    <script src="codeEditor.js"></script>
+    <script src="fileManager.js"></script>
+    <script src="prismHighlighter.js"></script>
+    <script src="intelliSense.js"></script>
+    <script>
+        controllerInput.handleControllerInput = (event) => {
+            controllerInput.emit(event.button, event);
+        };
+
+        document.addEventListener('keydown', (event) => {
+            const button = getButtonFromKeyCode(event.keyCode);
+            if (button) {
+                controllerInput.handleControllerInput({ button });
+            }
+        });
+
+        function getButtonFromKeyCode(keyCode) {
+            switch (keyCode) {
+                case 37: // Left arrow
+                    return XBOX_CONTROLLER_BUTTONS.LEFT_STICK_LEFT;
+                case 38: // Up arrow
+                    return XBOX_CONTROLLER_BUTTONS.LEFT_STICK_UP;
+                case 39: // Right arrow
+                    return XBOX_CONTROLLER_BUTTONS.LEFT_STICK_RIGHT;
+                case 40: // Down arrow
+                    return XBOX_CONTROLLER_BUTTONS.LEFT_STICK_DOWN;
+                case 65: // A
+                    return XBOX_CONTROLLER_BUTTONS.A;
+                case 66: // B
+                    return XBOX_CONTROLLER_BUTTONS.B;
+                case 87: // X
+                    return XBOX_CONTROLLER_BUTTONS.X;
+                case 89: // Y
+                    return XBOX_CONTROLLER_BUTTONS.Y;
+                default:
+                    return null;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            codeEditor.focus();
+        });
+    </script>
+</body>
+</html>
