@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox IDE</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="tab-bar"><div id="tab-container"></div></div>
+        <div id="main">
+            <div id="sidebar">
+                <div id="explorer-header">EXPLORER</div>
+                <div id="file-tree"></div>
+            </div>
+            <div id="editor-area">
+                <div id="editor-container"></div>
+            </div>
+            <div id="right-panel">
+                <div id="minimap-header">OUTLINE</div>
+                <div id="minimap-content"></div>
+            </div>
+        </div>
+        <div id="panel-area">
+            <div id="panel-tabs">
+                <span class="panel-tab active" data-panel="terminal">TERMINAL</span>
+                <span class="panel-tab" data-panel="problems">PROBLEMS</span>
+            </div>
+            <div id="panel-content"></div>
+        </div>
+        <div id="status-bar">
+            <span id="status-left"></span>
+            <span id="status-right">
+                <span id="status-cursor">Ln 1, Col 1</span>
+                <span id="status-lang">JavaScript</span>
+                <span id="status-ctrl">🎮</span>
+            </span>
+        </div>
+    </div>
+
+    <div id="command-palette-overlay" class="overlay hidden">
+        <div id="command-palette">
+            <div id="cp-header">Command Palette</div>
+            <input id="cp-input" placeholder="Type a command...">
+            <div id="cp-list"></div>
+        </div>
+    </div>
+
+    <div id="settings-overlay" class="overlay hidden">
+        <div id="settings-panel">
+            <div id="settings-header">Settings <span id="settings-close">✕</span></div>
+            <div id="settings-body"></div>
+        </div>
+    </div>
+
+    <div id="keyboard-overlay" class="overlay hidden">
+        <div id="keyboard-panel">
+            <div id="kbd-header">On-Screen Keyboard <span id="kbd-layer-name">ABC</span></div>
+            <div id="kbd-grid"></div>
+            <div id="kbd-suggestions"></div>
+        </div>
+    </div>
+
+    <div id="mouse-blocker"></div>
+
+    <div id="notification-container"></div>
+
+    <script src="../../node_modules/monaco-editor/min/vs/loader.js"></script>
+    <script>
+        require.config({ paths: { vs: '../../node_modules/monaco-editor/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            window.__monacoReady = true;
+            const script = document.createElement('script');
+            script.type = 'module';
+            script.src = 'app.mjs';
+            document.body.appendChild(script);
+        });
+    </script>
+</body>
+</html>

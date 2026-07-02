@@ -1,21 +1,19 @@
 {
   "name": "xbox-ide",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "VS Code clone operated entirely via Xbox controller",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron .",
+    "dev": "electron . --dev"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sandesh-shrestha69/xbox-ide.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Sandesh Shrestha",
+  "license": "MIT",
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/sandesh-shrestha69/xbox-ide/issues"
+  "dependencies": {
+    "monaco-editor": "^0.52.0"
   },
-  "homepage": "https://github.com/sandesh-shrestha69/xbox-ide#readme"
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
 }
