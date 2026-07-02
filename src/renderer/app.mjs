@@ -13,6 +13,7 @@ import { SplitPaneManager } from './splitPanes.js';
 import { GitManager } from './git.js';
 import { TerminalManager } from './terminal.js';
 import { ExtensionManager } from './extensions.js';
+import { UserManual } from './userManual.js';
 
 const cmds = new CommandRegistry();
 const focus = new FocusManager();
@@ -28,6 +29,7 @@ const splitPanes = new SplitPaneManager(editor, focus);
 const git = new GitManager(focus, editor, tabs);
 const terminal = new TerminalManager(focus);
 const extMgr = new ExtensionManager(cmds);
+const manual = new UserManual();
 
 async function init() {
     await editor.init();
@@ -190,6 +192,12 @@ async function init() {
         document.getElementById('panel-area').classList.add('open');
         terminal.focus();
     }, { label: 'Focus Terminal', category: 'View' });
+
+    // User Manual
+    cmds.register('manual.toggle', () => manual.toggle(), { label: 'Toggle Controls', category: 'View' });
+
+    // Auto-show controls on startup
+    manual.show();
 
     // Extensions
     cmds.register('extensions.show', () => {

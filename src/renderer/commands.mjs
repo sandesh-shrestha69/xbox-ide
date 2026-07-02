@@ -75,6 +75,7 @@ export class CommandRegistry {
             ['git.commit', noop, 'Git Commit', 'View'],
             ['terminal.focus', noop, 'Focus Terminal', 'View'],
             ['extensions.show', noop, 'Show Extensions', 'View'],
+            ['manual.toggle', noop, 'Toggle Controls', 'View'],
         ];
         for (const [id, fn, label, category] of defaults) {
             this.register(id, fn, { label, category });

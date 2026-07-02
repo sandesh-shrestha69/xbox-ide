@@ -182,9 +182,9 @@ async function runAll() {
 group('CommandRegistry — white box', async () => {
     const { CommandRegistry } = await import(new URL('../src/renderer/commands.mjs', import.meta.url).href);
 
-    test('constructor loads 44 defaults', () => {
+    test('constructor loads 45 defaults', () => {
         const c = new CommandRegistry();
-        assert.equal(c.all().length, 44);
+        assert.equal(c.all().length, 45);
     });
 
     test('register with no options uses defaults', () => {
@@ -1693,9 +1693,60 @@ group('CommandRegistry — new feature commands', async () => {
         assert.ok(c.get('extensions.show'));
     });
 
-    test('default count increased to 44', () => {
+    test('has manual.toggle command', () => {
         const c = new CommandRegistry();
-        assert.equal(c.all().length, 44);
+        assert.ok(c.get('manual.toggle'));
+    });
+
+    test('default count increased to 45 with manual.toggle', () => {
+        const c = new CommandRegistry();
+        assert.equal(c.all().length, 45);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER MANUAL — white box
+// ═══════════════════════════════════════════════════════════════════════════════
+group('UserManual — white box', async () => {
+    dom.reset();
+    const { UserManual } = await import(new URL('../src/renderer/userManual.mjs', import.meta.url).href);
+
+    test('constructor initializes hidden', () => {
+        const m = new UserManual();
+        assert.ok(!m._visible);
+    });
+
+    test('show opens panel and renders content', () => {
+        const m = new UserManual();
+        m.show();
+        assert.ok(m._visible);
+        assert.ok(m.contentEl.innerHTML.includes('CONTROLS'));
+    });
+
+    test('hide closes panel', () => {
+        const m = new UserManual();
+        m.show();
+        m.hide();
+        assert.ok(!m._visible);
+    });
+
+    test('toggle opens and closes', () => {
+        const m = new UserManual();
+        m.toggle();
+        assert.ok(m._visible);
+        m.toggle();
+        assert.ok(!m._visible);
+    });
+
+    test('_render populates content with controller mappings', () => {
+        const m = new UserManual();
+        m._render();
+        assert.ok(m.contentEl.innerHTML.includes('D-Pad'));
+        assert.ok(m.contentEl.innerHTML.includes('A'));
+        assert.ok(m.contentEl.innerHTML.includes('START'));
+        assert.ok(m.contentEl.innerHTML.includes('FOCUS ZONES'));
+        assert.ok(m.contentEl.innerHTML.includes('KEYBOARD LAYERS'));
+        assert.ok(m.contentEl.innerHTML.includes('COMMANDS'));
     });
 });
 
