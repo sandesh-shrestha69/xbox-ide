@@ -124,6 +124,20 @@ html, body { height: 100%; overflow: hidden; background: #1e1e1e; color: #d4d4d4
 .git-item:hover { background: #2d2d2d; }
 .git-item.focused { background: #094771; color: #fff; outline: 2px solid #1a8ad4; outline-offset: -2px; }
 .git-item.empty { color: #858585; cursor: default; }
+#git-commit-row { display: flex; padding: 4px 8px; gap: 4px; border-bottom: 1px solid #3c3c3c; }
+#git-commit-input { flex: 1; background: #1e1e1e; border: 1px solid #3c3c3c; color: #d4d4d4; padding: 3px 6px; font-size: 12px; font-family: monospace; outline: none; border-radius: 2px; }
+#git-commit-input:focus { border-color: #1a8ad4; }
+#git-commit-input::placeholder { color: #555; }
+#git-panel-tabs { display: flex; border-bottom: 1px solid #3c3c3c; font-size: 11px; }
+.gp-tab { flex: 1; text-align: center; padding: 3px 0; color: #858585; cursor: pointer; border-bottom: 2px solid transparent; user-select: none; text-transform: uppercase; letter-spacing: 0.3px; }
+.gp-tab.active { color: #d4d4d4; border-bottom-color: #1a8ad4; background: #2d2d2d; }
+.gp-content { flex: 1; overflow-y: auto; }
+.gp-content.hidden { display: none; }
+.git-branch-item { padding: 3px 12px; font-size: 12px; font-family: monospace; color: #d4d4d4; cursor: pointer; }
+.git-branch-item:hover { background: #2d2d2d; }
+.git-section { padding: 4px 12px; font-size: 10px; color: #858585; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d2d2d; }
+.git-log-item { padding: 3px 12px; font-size: 11px; font-family: monospace; color: #d4d4d4; display: flex; gap: 8px; }
+.git-hash { color: #569cd6; }
 
 /* ─── Extensions Panel ─────────────────────────────────────────────────── */
 #ext-header { display: flex; align-items: center; padding: 4px 8px; border-bottom: 1px solid #3c3c3c; }

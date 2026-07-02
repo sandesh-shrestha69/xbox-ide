@@ -154,6 +154,34 @@ ipcMain.handle('git:diff', async (_e, repoPath, filePath) => {
         return out || 'No diff available';
     } catch { return 'No diff available'; }
 });
+ipcMain.handle('git:branches', async (_e, repoPath) => {
+    try {
+        const out = execSync('git branch', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return out.trim().split('\n').filter(Boolean).map(b => b.trim());
+    } catch { return []; }
+});
+ipcMain.handle('git:log', async (_e, repoPath, count) => {
+    try {
+        const n = count || 20;
+        const out = execSync(`git log --oneline -${n}`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return out.trim().split('\n').filter(Boolean).map(line => {
+            const m = line.match(/^(\S+)\s+(.*)/);
+            return m ? { hash: m[1], message: m[2] } : { hash: '', message: line };
+        });
+    } catch { return []; }
+});
+ipcMain.handle('git:checkout', async (_e, repoPath, branch) => {
+    try {
+        execSync(`git checkout "${branch}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return { ok: true };
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('git:createBranch', async (_e, repoPath, name) => {
+    try {
+        execSync(`git branch "${name}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return { ok: true };
+    } catch (e) { return { error: e.message }; }
+});
 
 // ─── Terminal PTY ─────────────────────────────────────────────────────────────
 let _ptyProcess = null;

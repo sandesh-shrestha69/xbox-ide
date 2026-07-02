@@ -2,20 +2,21 @@ export class TerminalManager {
     constructor(focusManager) {
         this.focus = focusManager;
         this.el = document.getElementById('panel-content');
-        this._termEl = null;
-        this._inputBuffer = '';
-        this._cursorPos = 0;
+        this._xterm = null;
+        this._fitAddon = null;
+        this._ptyConnected = false;
+        this._initialized = false;
         this._history = [];
         this._historyIndex = -1;
-        this._prompt = '$ ';
-        this._currentLine = '';
-        this._initialized = false;
+        this._tabs = [];
+        this._activeTab = 0;
+        this._buffers = [''];
 
         this.focus.registerZone({
             id: 'terminal',
-            focus: () => { if (this._termEl) this._termEl.focus(); },
+            focus: () => { if (this._xterm) this._xterm.focus(); },
             navigate: (dx, dy) => this._navigate(dx, dy),
-            confirm: () => this._executeLine(),
+            confirm: () => { if (this._xterm) this._xterm.focus(); },
             back: () => {},
             context: () => {},
         });
@@ -24,55 +25,63 @@ export class TerminalManager {
     async init() {
         if (this._initialized) return;
         this._initialized = true;
-        this._createTerminal();
+        this._createXterm();
         await this._connectPTY();
     }
 
-    _createTerminal() {
-        if (!this.el) return;
+    _createXterm() {
+        if (!this.el || typeof Terminal === 'undefined') {
+            this._fallbackTerminal();
+            return;
+        }
         this.el.innerHTML = '';
-        this._termEl = document.createElement('div');
-        this._termEl.className = 'terminal-widget';
-        this._termEl.contentEditable = true;
-        this._termEl.tabIndex = 0;
-        this.el.appendChild(this._termEl);
-        this._renderPrompt();
-
-        this._termEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this._executeLine();
-            } else if (e.key === 'Backspace') {
-                e.preventDefault();
-                this._backspace();
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                this._historyUp();
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                this._historyDown();
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                this._cursorLeft();
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                this._cursorRight();
-            } else if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                this._interrupt();
-            } else if (e.key === 'l' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                this._clear();
-            } else if (e.key.length === 1) {
-                e.preventDefault();
-                this._insertChar(e.key);
+        this.el.style.background = '#1e1e1e';
+        this._xterm = new Terminal({
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontSize: 13,
+            fontFamily: '"Cascadia Code", "Consolas", monospace',
+            theme: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4',
+                selectionBackground: '#094771', black: '#1e1e1e', red: '#f44747',
+                green: '#4ec9b0', yellow: '#e8bf6a', blue: '#569cd6', magenta: '#c586c0',
+                cyan: '#4fc1ff', white: '#d4d4d4' },
+            allowTransparency: false,
+            scrollback: 10000,
+        });
+        try {
+            this._fitAddon = new FitAddon();
+            this._xterm.loadAddon(this._fitAddon);
+        } catch {
+            try { this._fitAddon = new window.FitAddon?.(); if (this._fitAddon) this._xterm.loadAddon(this._fitAddon); }
+            catch {}
+        }
+        this._xterm.open(this.el);
+        if (this._fitAddon) setTimeout(() => this._fitAddon.fit(), 100);
+        this._xterm.onKey((e) => {
+            if (this._ptyConnected) {
+                this.write(e.key).catch(() => {});
+            } else {
+                this._localEcho(e.key);
             }
         });
+        this._xterm.onResize(({ cols, rows }) => {
+            window.xbox.terminal.resize(cols, rows).catch(() => {});
+        });
+        this._xterm.focus();
+        window.addEventListener('resize', () => { if (this._fitAddon) this._fitAddon.fit(); });
+    }
 
-        this._termEl.addEventListener('input', () => {});
-        this._termEl.addEventListener('beforeinput', (e) => {
-            if (e.inputType === 'insertText' || e.inputType === 'insertLineBreak') {
+    _fallbackTerminal() {
+        this.el.innerHTML = '<div class="terminal-widget" contenteditable style="height:100%;padding:8px;font-family:monospace;font-size:13px;color:#d4d4d4;outline:none;overflow-y:auto;">Terminal ready</div>';
+        const te = this.el.firstChild;
+        te.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
                 e.preventDefault();
+                const cmd = te.innerText.split('\n').pop() || '';
+                this.write(cmd + '\n').catch(() => {});
+                te.innerHTML += '\n';
+            } else if (e.key.length === 1) {
+                // handled natively by contentEditable
             }
         });
     }
@@ -80,181 +89,58 @@ export class TerminalManager {
     async _connectPTY() {
         try {
             await window.xbox.terminal.connect();
+            this._ptyConnected = true;
+            if (this._xterm) this._xterm.writeln('Connected to shell');
             window.xbox.terminal.onData((data) => {
-                this._write(data);
+                if (this._xterm) this._xterm.write(data);
+                else this._fallbackWrite(data);
             });
             window.xbox.terminal.onError((err) => {
-                this._writeln('\r\n\x1b[31mError: ' + err + '\x1b[0m');
+                if (this._xterm) this._xterm.writeln('\x1b[31mError: ' + err + '\x1b[0m');
             });
             window.xbox.terminal.onExit((code) => {
-                this._writeln('\r\n\x1b[33mProcess exited with code ' + code + '\x1b[0m');
-                this._renderPrompt();
+                this._ptyConnected = false;
+                if (this._xterm) this._xterm.writeln('\x1b[33mProcess exited with code ' + code + '\x1b[0m');
             });
         } catch (e) {
-            this._writeln('\r\nTerminal not available: ' + e.message);
-            this._renderPrompt();
+            if (this._xterm) this._xterm.writeln('Terminal unavailable: ' + e.message);
         }
     }
 
     async write(data) {
-        try {
-            await window.xbox.terminal.write(data);
-        } catch {}
+        try { await window.xbox.terminal.write(data); } catch {}
     }
 
-    focus() {
-        if (this._termEl) this._termEl.focus();
+    async resize(cols, rows) {
+        try { await window.xbox.terminal.resize(cols, rows); } catch {}
     }
 
-    writeln(text) {
-        this._writeln(text);
-    }
+    focus() { if (this._xterm) this._xterm.focus(); }
 
-    _write(data) {
-        if (!this._termEl) return;
-        const lines = this._termEl.innerHTML.split('<br>');
-        const lastLine = lines[lines.length - 1] || '';
-        if (lastLine.startsWith(this._escapeHtml(this._prompt)) || lastLine === '') {
-            lines[lines.length - 1] = '';
-            this._termEl.innerHTML = lines.join('<br>') + this._escapeHtml(data);
-        } else {
-            this._termEl.innerHTML += this._escapeHtml(data);
+    writeln(text) { if (this._xterm) this._xterm.writeln(text); }
+
+    _localEcho(key) {
+        if (key === '\r') {
+            const line = this._buffers[this._activeTab];
+            if (line.trim()) { this._history.push(line.trim()); this._historyIndex = this._history.length; }
+            this._buffers[this._activeTab] = '';
+            return;
         }
-        this._scrollToBottom();
-    }
-
-    _writeln(text) {
-        if (!this._termEl) return;
-        this._termEl.innerHTML += this._escapeHtml(text);
-        this._scrollToBottom();
-    }
-
-    _renderPrompt() {
-        if (!this._termEl) return;
-        const lines = this._termEl.innerHTML.split('<br>');
-        let lastLine = lines[lines.length - 1] || '';
-        const promptHtml = this._escapeHtml(this._prompt);
-        if (!lastLine.endsWith(promptHtml) && lastLine !== '') {
-            this._termEl.innerHTML += '<br>' + promptHtml;
-        } else if (lastLine === '') {
-            lines[lines.length - 1] = promptHtml;
-            this._termEl.innerHTML = lines.join('<br>');
+        if (key === '\x7f') {
+            this._buffers[this._activeTab] = this._buffers[this._activeTab].slice(0, -1);
+            return;
         }
-        this._cursorPos = this._prompt.length;
-        this._currentLine = '';
-        this._scrollToBottom();
+        this._buffers[this._activeTab] += key;
     }
 
-    _executeLine() {
-        const text = this._termEl ? this._termEl.innerText : '';
-        const lines = text.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
-        let cmd = lastLine;
-        if (cmd.startsWith(this._prompt)) cmd = cmd.slice(this._prompt.length);
-        cmd = cmd.trim();
-
-        if (cmd) {
-            this._history.push(cmd);
-            this._historyIndex = this._history.length;
-            this._writeln('\r\n');
-            this.write(cmd + '\n').catch(() => {});
-        } else {
-            this._writeln('\r\n');
-            this._renderPrompt();
-        }
-        this._currentLine = '';
-        this._cursorPos = this._prompt.length;
+    _fallbackWrite(data) {
+        const el = this.el.querySelector('.terminal-widget');
+        if (el) el.innerHTML += this._escapeHtml(data);
     }
 
-    _insertChar(ch) {
-        if (!this._termEl) return;
-        const text = this._termEl.innerText || '';
-        const lines = text.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
-        let newLast = lastLine.slice(0, this._cursorPos) + ch + lastLine.slice(this._cursorPos);
-        lines[lines.length - 1] = newLast;
-        this._currentLine = newLast.startsWith(this._prompt) ? newLast.slice(this._prompt.length) : newLast;
-        this._cursorPos++;
-        this._termEl.innerText = lines.join('\n');
-        this._scrollToBottom();
-    }
-
-    _backspace() {
-        if (!this._termEl) return;
-        if (this._cursorPos <= this._prompt.length) return;
-        const text = this._termEl.innerText || '';
-        const lines = text.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
-        const newLast = lastLine.slice(0, this._cursorPos - 1) + lastLine.slice(this._cursorPos);
-        lines[lines.length - 1] = newLast;
-        this._currentLine = newLast.startsWith(this._prompt) ? newLast.slice(this._prompt.length) : newLast;
-        this._cursorPos--;
-        this._termEl.innerText = lines.join('\n');
-        this._scrollToBottom();
-    }
-
-    _cursorLeft() {
-        if (this._cursorPos > this._prompt.length) this._cursorPos--;
-    }
-
-    _cursorRight() {
-        if (!this._termEl) return;
-        const text = this._termEl.innerText || '';
-        const lines = text.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
-        if (this._cursorPos < lastLine.length) this._cursorPos++;
-    }
-
-    _historyUp() {
-        if (this._history.length === 0) return;
-        if (this._historyIndex > 0) this._historyIndex--;
-        this._replaceCurrentLine(this._history[this._historyIndex]);
-    }
-
-    _historyDown() {
-        if (this._historyIndex >= this._history.length - 1) {
-            this._historyIndex = this._history.length;
-            this._replaceCurrentLine('');
-        } else {
-            this._historyIndex++;
-            this._replaceCurrentLine(this._history[this._historyIndex]);
-        }
-    }
-
-    _replaceCurrentLine(cmd) {
-        if (!this._termEl) return;
-        const text = this._termEl.innerText || '';
-        const lines = text.split('\n');
-        lines[lines.length - 1] = this._prompt + cmd;
-        this._currentLine = cmd;
-        this._cursorPos = this._prompt.length + cmd.length;
-        this._termEl.innerText = lines.join('\n');
-        this._scrollToBottom();
-    }
-
-    _interrupt() {
-        this._writeln('^C\r\n');
-        this._renderPrompt();
-    }
-
-    _clear() {
-        if (this._termEl) this._termEl.innerHTML = '';
-        this._renderPrompt();
-    }
-
-    _navigate(dx, dy) {
-        if (dy < 0) this._historyUp();
-        else if (dy > 0) this._historyDown();
-        else if (dx < 0) this._cursorLeft();
-        else if (dx > 0) this._cursorRight();
-    }
-
-    _scrollToBottom() {
-        if (this.el) this.el.scrollTop = this.el.scrollHeight;
-    }
+    _navigate(dx, dy) {}
 
     _escapeHtml(text) {
-        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return text.replace(/[&<>"']/g, c => map[c] || c);
+        return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 }

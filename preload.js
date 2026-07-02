@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('xbox', {
         unstage: (repoPath, filePath) => ipcRenderer.invoke('git:unstage', repoPath, filePath),
         commit: (repoPath, msg) => ipcRenderer.invoke('git:commit', repoPath, msg),
         diff: (repoPath, filePath) => ipcRenderer.invoke('git:diff', repoPath, filePath),
+        branches: (repoPath) => ipcRenderer.invoke('git:branches', repoPath),
+        log: (repoPath, count) => ipcRenderer.invoke('git:log', repoPath, count),
+        checkout: (repoPath, branch) => ipcRenderer.invoke('git:checkout', repoPath, branch),
+        createBranch: (repoPath, name) => ipcRenderer.invoke('git:createBranch', repoPath, name),
     },
     terminal: {
         connect: () => ipcRenderer.invoke('terminal:connect'),

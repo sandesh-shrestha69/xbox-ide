@@ -87,18 +87,15 @@ export class SplitPaneManager {
         const primaryModel = this._editors[0]._model;
 
         for (let i = 1; i < this._editors.length; i++) {
-            if (this._editors[i].editor) {
-                this._editors[i].editor.dispose();
-            }
-            if (this._editors[i]._model) {
-                this._editors[i]._model.dispose();
-            }
+            if (this._editors[i].editor) this._editors[i].editor.dispose();
+            if (this._editors[i]._model) this._editors[i]._model.dispose();
         }
 
-        this._editors = [this.editor];
-        this._editors[0].editor = primaryEditor;
-        this._editors[0]._model = primaryModel;
-        this._editors[0].container = this.container;
+        this._isSplit = false;
+        this._activePane = 0;
+        this.editor.editor = primaryEditor;
+        this.editor._model = primaryModel;
+        this.editor.container = this.container;
         this.container.innerHTML = '';
         const mainPane = document.createElement('div');
         mainPane.className = 'split-pane active';
@@ -108,18 +105,12 @@ export class SplitPaneManager {
         this._paneEls = [mainPane];
 
         if (primaryEditor) {
-            primaryEditor._domElement = null;
-            const oldContainer = primaryEditor.getContainerDomNode ? primaryEditor.getContainerDomNode() : null;
-            if (oldContainer && oldContainer.parentNode) {
-                oldContainer.parentNode.removeChild(oldContainer);
-            }
-            mainPane.appendChild(mainPane);
+            const oldNode = primaryEditor.getContainerDomNode?.();
+            if (oldNode && oldNode.parentNode) oldNode.parentNode.removeChild(oldNode);
+            mainPane.appendChild(oldNode || document.createElement('div'));
             primaryEditor.layout();
         }
-
-        this._isSplit = false;
-        this._activePane = 0;
-        this.editor.editor = primaryEditor || this.editor.editor;
+        this._editors = [this.editor];
     }
 
     focusPane(index) {
@@ -178,53 +169,13 @@ export class SplitPaneManager {
 }
 
 class EditorController {
-    constructor(id) {
+    constructor() {
         this.container = null;
         this.editor = null;
         this._model = null;
-        this._decorations = [];
     }
-
     setValue(val) { if (this.editor) this.editor.setValue(val); }
     getValue() { return this.editor ? this.editor.getValue() : ''; }
     setLanguage(lang) { if (this._model) monaco.editor.setModelLanguage(this._model, lang); }
     focus() { if (this.editor) this.editor.focus(); }
-    undo() { if (this.editor) this.editor.trigger('gamepad', 'undo'); }
-    redo() { if (this.editor) this.editor.trigger('gamepad', 'redo'); }
-    format() { if (this.editor) this.editor.getAction('editor.action.formatDocument')?.run(); }
-    commentLine() { if (this.editor) this.editor.trigger('gamepad', 'editor.action.commentLine'); }
-    indent() { if (this.editor) this.editor.trigger('gamepad', 'tab'); }
-    outdent() { if (this.editor) this.editor.trigger('gamepad', 'outdent'); }
-
-    moveCursor(dx, dy) {
-        if (!this.editor) return;
-        const pos = this.editor.getPosition();
-        if (!pos) return;
-        this.editor.setPosition({
-            lineNumber: Math.max(1, pos.lineNumber + dy),
-            column: Math.max(1, pos.column + dx),
-        });
-        this.editor.revealPositionInCenter(pos);
-    }
-
-    scroll(dx, dy) {
-        if (!this.editor) return;
-        this.editor.setScrollTop(this.editor.getScrollTop() + dy);
-        this.editor.setScrollLeft(this.editor.getScrollLeft() + dx);
-    }
-
-    insertText(text) {
-        if (!this.editor) return;
-        this.editor.executeEdits('gamepad', [{
-            identifier: { major: 1, minor: 1 },
-            range: this.editor.getSelection(),
-            text,
-            forceMoveMarkers: true,
-        }]);
-        this.editor.focus();
-    }
-
-    setOption(key, val) {
-        if (this.editor) this.editor.updateOptions({ [key]: val });
-    }
 }

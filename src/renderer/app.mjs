@@ -1,19 +1,19 @@
-import { CommandRegistry } from './commands.js';
-import { FocusManager } from './focusManager.js';
-import { GamepadManager } from './gamepad.js';
-import { EditorController } from './editor.js';
-import { KeyboardOverlay } from './keyboardOverlay.js';
-import { FileExplorer } from './fileExplorer.js';
-import { TabManager } from './tabManager.js';
-import { CommandPalette } from './commandPalette.js';
-import { SettingsManager } from './settings.js';
-import { FindReplace } from './findReplace.js';
-import { SnippetManager } from './snippets.js';
-import { SplitPaneManager } from './splitPanes.js';
-import { GitManager } from './git.js';
-import { TerminalManager } from './terminal.js';
-import { ExtensionManager } from './extensions.js';
-import { UserManual } from './userManual.js';
+import { CommandRegistry } from './commands.mjs';
+import { FocusManager } from './focusManager.mjs';
+import { GamepadManager } from './gamepad.mjs';
+import { EditorController } from './editor.mjs';
+import { KeyboardOverlay } from './keyboardOverlay.mjs';
+import { FileExplorer } from './fileExplorer.mjs';
+import { TabManager } from './tabManager.mjs';
+import { CommandPalette } from './commandPalette.mjs';
+import { SettingsManager } from './settings.mjs';
+import { FindReplace } from './findReplace.mjs';
+import { SnippetManager } from './snippets.mjs';
+import { SplitPaneManager } from './splitPanes.mjs';
+import { GitManager } from './git.mjs';
+import { TerminalManager } from './terminal.mjs';
+import { ExtensionManager } from './extensions.mjs';
+import { UserManual } from './userManual.mjs';
 
 const cmds = new CommandRegistry();
 const focus = new FocusManager();
@@ -226,10 +226,6 @@ async function init() {
     });
 
     document.getElementById('git-refresh-btn')?.addEventListener('click', () => git.refresh());
-    document.getElementById('git-commit-btn')?.addEventListener('click', async () => {
-        const msg = prompt('Commit message:');
-        if (msg) await git.commit(msg);
-    });
     document.getElementById('ext-load-btn')?.addEventListener('click', async () => {
         const dir = await window.xbox.dialog?.openFile?.();
         if (dir?.filePath) {
@@ -238,28 +234,27 @@ async function init() {
         }
     });
 
-    // Panel tab switching (terminal uses PTY now)
+    // Panel tab switching
     document.querySelectorAll('.panel-tab').forEach(el => {
         el.addEventListener('click', () => {
             document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
             const panel = el.dataset.panel;
             if (panel === 'terminal') {
-                document.getElementById('panel-content').innerHTML = '';
                 terminal.init();
             } else if (panel === 'problems') {
-                document.getElementById('panel-content').innerHTML = 'No problems detected in workspace.';
+                document.getElementById('panel-content').innerHTML = '<div style="padding:8px;color:#858585">No problems detected.</div>';
             }
         });
     });
-    document.querySelectorAll('.panel-tab').forEach(el => {
+
+    // Git panel sub-tabs
+    document.querySelectorAll('.gp-tab').forEach(el => {
         el.addEventListener('click', () => {
-            document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.gp-tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
-            const panel = el.dataset.panel;
-            document.getElementById('panel-content').textContent =
-                panel === 'terminal' ? '> Xbox IDE Terminal Ready\n> Press LB/RB to switch tabs\n' :
-                panel === 'problems' ? 'No problems detected in workspace.' : '';
+            document.querySelectorAll('.gp-content').forEach(p => p.classList.add('hidden'));
+            document.getElementById('git-' + el.dataset.gp)?.classList.remove('hidden');
         });
     });
 
