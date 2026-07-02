@@ -139,8 +139,7 @@ export class KeyboardOverlay {
         if (!val) return;
         if (val === '⇧') {
             this._shifted = !this._shifted;
-            this._layerIndex = this._shifted ? 0 : 1;
-            if (!this._shifted && this._layerNames[this._layerIndex] === 'ABC') this._layerIndex = 1;
+            this._layerIndex = this._shifted ? 1 : 0;
             this._buildGrid();
             this._updateFocus();
             this.layerNameEl.textContent = this._layerNames[this._layerIndex];

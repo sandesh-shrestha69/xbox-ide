@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { fork } = require('child_process');
+const { fork, execSync, spawn } = require('child_process');
+const os = require('os');
 
 let mainWindow = null;
 let extensionHost = null;
@@ -106,6 +107,128 @@ function registerIpcHandlers() {
         if (extensionHost) extensionHost.send(msg);
     });
 }
+
+// ─── Git IPC ─────────────────────────────────────────────────────────────────
+let _gitCwd = null;
+ipcMain.handle('git:status', async (_e, repoPath) => {
+    try {
+        const out = execSync('git status --porcelain', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        const lines = out.trim().split('\n').filter(Boolean);
+        _gitCwd = repoPath;
+        return lines.map(line => {
+            const staged = line[0] !== ' ';
+            const untracked = line.startsWith('??');
+            const pathStr = line.slice(3).trim();
+            return { path: path.join(repoPath, pathStr), staged, untracked, raw: line };
+        });
+    } catch { return []; }
+});
+ipcMain.handle('git:branch', async (_e, repoPath) => {
+    try {
+        const out = execSync('git branch --show-current', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return out.trim();
+    } catch { return 'unknown'; }
+});
+ipcMain.handle('git:stage', async (_e, repoPath, filePath) => {
+    try {
+        execSync(`git add "${filePath}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return { ok: true };
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('git:unstage', async (_e, repoPath, filePath) => {
+    try {
+        execSync(`git restore --staged "${filePath}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return { ok: true };
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('git:commit', async (_e, repoPath, message) => {
+    try {
+        execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return 'Committed: ' + message;
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('git:diff', async (_e, repoPath, filePath) => {
+    try {
+        const rel = path.relative(repoPath, filePath);
+        const out = execSync(`git diff "${rel}"`, { cwd: repoPath, encoding: 'utf-8', timeout: 5000 });
+        return out || 'No diff available';
+    } catch { return 'No diff available'; }
+});
+
+// ─── Terminal PTY ─────────────────────────────────────────────────────────────
+let _ptyProcess = null;
+ipcMain.handle('terminal:connect', async () => {
+    try {
+        const pty = require('node-pty');
+        const shell = process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : 'bash');
+        _ptyProcess = pty.spawn(shell, [], {
+            name: 'xterm-color',
+            cwd: process.cwd(),
+            env: process.env,
+        });
+        _ptyProcess.onData((data) => {
+            if (mainWindow) mainWindow.webContents.send('terminal:data', data);
+        });
+        _ptyProcess.onExit(({ exitCode }) => {
+            if (mainWindow) mainWindow.webContents.send('terminal:exit', exitCode);
+            _ptyProcess = null;
+        });
+        return { ok: true };
+    } catch (e) {
+        return { error: e.message };
+    }
+});
+ipcMain.handle('terminal:write', async (_e, data) => {
+    if (_ptyProcess) {
+        _ptyProcess.write(data);
+        return { ok: true };
+    }
+    return { error: 'No terminal' };
+});
+ipcMain.handle('terminal:disconnect', async () => {
+    if (_ptyProcess) { _ptyProcess.kill(); _ptyProcess = null; }
+    return { ok: true };
+});
+ipcMain.handle('terminal:resize', async (_e, cols, rows) => {
+    if (_ptyProcess) { _ptyProcess.resize(cols, rows); }
+    return { ok: true };
+});
+
+// ─── Extension Loading ────────────────────────────────────────────────────────
+ipcMain.handle('ext:load', async (_e, manifestPath) => {
+    try {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        return {
+            id: manifest.name || path.basename(path.dirname(manifestPath)),
+            displayName: manifest.displayName || manifest.name,
+            version: manifest.version,
+            contributes: manifest.contributes || {},
+        };
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('ext:loadDir', async (_e, dirPath) => {
+    try {
+        const results = [];
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const mp = path.join(dirPath, entry.name, 'package.json');
+                if (fs.existsSync(mp)) {
+                    try {
+                        const manifest = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+                        results.push({
+                            id: manifest.name || entry.name,
+                            displayName: manifest.displayName || manifest.name,
+                            version: manifest.version,
+                            contributes: manifest.contributes || {},
+                        });
+                    } catch {}
+                }
+            }
+        }
+        return { extensions: results };
+    } catch (e) { return { error: e.message }; }
+});
 
 function walkDir(dirPath, currentDepth, maxDepth) {
     if (currentDepth > maxDepth) return null;

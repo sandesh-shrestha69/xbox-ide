@@ -7,6 +7,12 @@ import { FileExplorer } from './fileExplorer.js';
 import { TabManager } from './tabManager.js';
 import { CommandPalette } from './commandPalette.js';
 import { SettingsManager } from './settings.js';
+import { FindReplace } from './findReplace.js';
+import { SnippetManager } from './snippets.js';
+import { SplitPaneManager } from './splitPanes.js';
+import { GitManager } from './git.js';
+import { TerminalManager } from './terminal.js';
+import { ExtensionManager } from './extensions.js';
 
 const cmds = new CommandRegistry();
 const focus = new FocusManager();
@@ -16,6 +22,12 @@ const tabs = new TabManager(editor, focus);
 const explorer = new FileExplorer(focus, editor, tabs);
 const palette = new CommandPalette(cmds, focus);
 const settings = new SettingsManager(editor);
+const findReplace = new FindReplace(editor, focus);
+const snippets = new SnippetManager(editor);
+const splitPanes = new SplitPaneManager(editor, focus);
+const git = new GitManager(focus, editor, tabs);
+const terminal = new TerminalManager(focus);
+const extMgr = new ExtensionManager(cmds);
 
 async function init() {
     await editor.init();
@@ -31,6 +43,19 @@ async function init() {
         const home = await window.xbox?.app?.getPath?.('home');
         if (home) await explorer.load(home);
     } catch {}
+
+    await terminal.init();
+    await extMgr.init();
+
+    // Register find overlay zone
+    focus.registerZone({
+        id: 'find',
+        focus: () => findReplace.findInput?.focus(),
+        navigate: (dx, dy) => findReplace.navigate(dy),
+        confirm: () => findReplace.confirm(),
+        back: () => findReplace.close(),
+        context: () => {},
+    });
 
     // Register Editor focus zone
     focus.registerZone({
@@ -105,7 +130,120 @@ async function init() {
         editor.editor?.trigger('gamepad', 'editor.action.showContextMenu');
     }, { label: 'Context Menu', category: 'Editor' });
 
-    // Panel tab switching
+    // Find / Replace
+    cmds.register('find.open', () => findReplace.open('find'), { label: 'Find', category: 'Find' });
+    cmds.register('find.replace', () => findReplace.open('replace'), { label: 'Find and Replace', category: 'Find' });
+    cmds.register('find.next', () => findReplace._findNext(), { label: 'Find Next', category: 'Find' });
+    cmds.register('find.prev', () => findReplace._findPrev(), { label: 'Find Previous', category: 'Find' });
+
+    // File
+    cmds.register('file.new', async () => {
+        tabs.openTab('untitled-' + Date.now(), '');
+        notify('New file created');
+    }, { label: 'New File', category: 'File' });
+    cmds.register('file.saveAs', async () => {
+        const content = editor.getValue();
+        const res = await window.xbox.dialog.saveFile(content);
+        if (res?.filePath) {
+            tabs.openTab(res.filePath, content);
+            tabs.markClean();
+            notify('File saved');
+        }
+    }, { label: 'Save As', category: 'File' });
+
+    // Snippets / Emmet
+    cmds.register('snippet.insert', () => {
+        editor.editor?.trigger('gamepad', 'editor.action.triggerSuggest');
+    }, { label: 'Insert Snippet', category: 'Editor' });
+    cmds.register('emmet.expand', () => {
+        const model = editor.editor?.getModel();
+        const pos = editor.editor?.getPosition();
+        if (model && pos) {
+            const word = model.getWordUntilPosition(pos);
+            const abbr = word.word;
+            if (abbr) {
+                const range = { startLineNumber: pos.lineNumber, endLineNumber: pos.lineNumber,
+                    startColumn: word.startColumn, endColumn: word.endColumn };
+                editor.editor?.executeEdits('emmet', [{ range, text: '', forceMoveMarkers: true }]);
+                snippets.expandEmmet(abbr);
+            }
+        }
+    }, { label: 'Expand Emmet', category: 'Editor' });
+
+    // Split Panes
+    cmds.register('split.horizontal', () => splitPanes.split('horizontal'), { label: 'Split Horizontal', category: 'View' });
+    cmds.register('split.vertical', () => splitPanes.split('vertical'), { label: 'Split Vertical', category: 'View' });
+    cmds.register('split.unsplit', () => splitPanes.unsplit(), { label: 'Unsplit', category: 'View' });
+    cmds.register('split.nextPane', () => splitPanes.nextPane(), { label: 'Next Pane', category: 'View' });
+    cmds.register('split.prevPane', () => splitPanes.prevPane(), { label: 'Previous Pane', category: 'View' });
+
+    // Git
+    cmds.register('git.toggle', () => git.toggle(), { label: 'Toggle Git', category: 'View' });
+    cmds.register('git.refresh', () => git.refresh(), { label: 'Refresh Git', category: 'View' });
+    cmds.register('git.commit', async () => {
+        const msg = prompt('Commit message:');
+        if (msg) await git.commit(msg);
+    }, { label: 'Git Commit', category: 'View' });
+
+    // Terminal
+    cmds.register('terminal.focus', () => {
+        document.getElementById('panel-area').classList.add('open');
+        terminal.focus();
+    }, { label: 'Focus Terminal', category: 'View' });
+
+    // Extensions
+    cmds.register('extensions.show', () => {
+        const panel = document.getElementById('extensions-panel');
+        if (panel) {
+            document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.add('hidden'));
+            panel.classList.remove('hidden');
+            document.querySelectorAll('.st-panel-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('[data-sidebar="extensions"]')?.classList.add('active');
+            const list = document.getElementById('ext-list');
+            const exts = extMgr.getAllExtensions();
+            list.innerHTML = exts.map(e =>
+                `<div class="ext-item">${e.displayName || e.id} <span class="ext-ver">${e.version || ''}</span></div>`
+            ).join('') || '<div class="ext-item">No extensions loaded</div>';
+        }
+    }, { label: 'Show Extensions', category: 'View' });
+
+    // Sidebar tab switching
+    document.querySelectorAll('.st-panel-tab').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.st-panel-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(el.dataset.sidebar + '-panel')?.classList.remove('hidden');
+        });
+    });
+
+    document.getElementById('git-refresh-btn')?.addEventListener('click', () => git.refresh());
+    document.getElementById('git-commit-btn')?.addEventListener('click', async () => {
+        const msg = prompt('Commit message:');
+        if (msg) await git.commit(msg);
+    });
+    document.getElementById('ext-load-btn')?.addEventListener('click', async () => {
+        const dir = await window.xbox.dialog?.openFile?.();
+        if (dir?.filePath) {
+            const dirPath = dir.filePath.replace(/\/[^/]+$/, '');
+            await extMgr.loadFromDirectory(dirPath);
+        }
+    });
+
+    // Panel tab switching (terminal uses PTY now)
+    document.querySelectorAll('.panel-tab').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            const panel = el.dataset.panel;
+            if (panel === 'terminal') {
+                document.getElementById('panel-content').innerHTML = '';
+                terminal.init();
+            } else if (panel === 'problems') {
+                document.getElementById('panel-content').innerHTML = 'No problems detected in workspace.';
+            }
+        });
+    });
     document.querySelectorAll('.panel-tab').forEach(el => {
         el.addEventListener('click', () => {
             document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
@@ -122,12 +260,14 @@ async function init() {
     focus.navigate = (dx, dy) => {
         if (keyboard.isOpen) { keyboard.navigate(dx, dy); return; }
         if (palette._isOpen) { palette.navigate(dy); return; }
+        if (findReplace.isOpen) { findReplace.navigate(dy); return; }
         origNavigate(dx, dy);
     };
     const origConfirm = focus.confirm.bind(focus);
     focus.confirm = () => {
         if (keyboard.isOpen) { keyboard.confirm(); return; }
         if (palette._isOpen) { palette.confirm(); return; }
+        if (findReplace.isOpen) { findReplace.confirm(); return; }
         origConfirm();
     };
     const origBack = focus.back.bind(focus);
@@ -135,6 +275,7 @@ async function init() {
         if (keyboard.isOpen) { keyboard.back(); return; }
         if (palette._isOpen) { palette.close(); return; }
         if (settings._isOpen) { settings.close(); return; }
+        if (findReplace.isOpen) { findReplace.close(); return; }
         origBack();
     };
 

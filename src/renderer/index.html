@@ -11,8 +11,30 @@
         <div id="tab-bar"><div id="tab-container"></div></div>
         <div id="main">
             <div id="sidebar">
-                <div id="explorer-header">EXPLORER</div>
-                <div id="file-tree"></div>
+                <div id="sidebar-tabs">
+                    <span class="st-panel-tab active" data-sidebar="explorer">EXPLORER</span>
+                    <span class="st-panel-tab" data-sidebar="git">GIT</span>
+                    <span class="st-panel-tab" data-sidebar="extensions">EXTENSIONS</span>
+                </div>
+                <div id="sidebar-content">
+                    <div id="explorer-panel" class="sidebar-panel">
+                        <div id="file-tree"></div>
+                    </div>
+                    <div id="git-panel" class="sidebar-panel hidden">
+                        <div id="git-header">
+                            <span id="git-branch">main</span>
+                            <button id="git-refresh-btn" class="sidebar-btn">↻</button>
+                            <button id="git-commit-btn" class="sidebar-btn">✓</button>
+                        </div>
+                        <div id="git-status-list"></div>
+                    </div>
+                    <div id="extensions-panel" class="sidebar-panel hidden">
+                        <div id="ext-header">
+                            <button id="ext-load-btn" class="sidebar-btn">Load</button>
+                        </div>
+                        <div id="ext-list"></div>
+                    </div>
+                </div>
             </div>
             <div id="editor-area">
                 <div id="editor-container"></div>
@@ -36,6 +58,26 @@
                 <span id="status-lang">JavaScript</span>
                 <span id="status-ctrl">🎮</span>
             </span>
+        </div>
+    </div>
+
+    <div id="find-overlay" class="overlay hidden">
+        <div id="find-panel">
+            <div id="find-header">
+                <span id="find-toggle-replace">Replace</span>
+                <span id="find-close-btn">✕</span>
+            </div>
+            <input id="find-input" placeholder="Find...">
+            <span id="find-match-count"></span>
+            <div id="find-actions">
+                <button id="find-prev-btn">▲</button>
+                <button id="find-next-btn">▼</button>
+                <button id="find-replace-btn" title="Replace">Replace</button>
+                <button id="find-replace-all-btn" title="Replace All">All</button>
+            </div>
+            <div id="find-replace-row">
+                <input id="replace-input" placeholder="Replace...">
+            </div>
         </div>
     </div>
 

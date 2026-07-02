@@ -91,6 +91,9 @@ global.window = {
         fs: { readFile: async () => ({}), readDir: async () => ({}), writeFile: async () => ({}) },
         dialog: { openFile: async () => null, saveFile: async () => null },
         app: { getPath: async () => '/home' },
+        git: { status: async () => [], branch: async () => 'main', stage: async () => {}, unstage: async () => {}, commit: async () => {}, diff: async () => '' },
+        terminal: { connect: async () => ({ ok: true }), write: async () => {}, onData: () => {}, onError: () => {}, onExit: () => {} },
+        ext: { request: async () => {}, onMessage: () => {}, load: async () => null, loadDir: async () => ({ extensions: [] }) },
     },
     __monacoReady: false,
     __swallowKey: () => false,
@@ -100,13 +103,21 @@ global.window = {
             setTheme() {},
             setModelLanguage() {},
             registerCompletionItemProvider() {},
+            createModel() { return { getValue: () => '', getLanguageId: () => 'javascript', dispose() {} }; },
         },
-        languages: { registerCompletionItemProvider() {} },
+        languages: {
+            registerCompletionItemProvider() {},
+            CompletionItemKind: { Snippet: 8, Keyword: 5 },
+            CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+        },
     },
     navigator: { getGamepads: () => [] },
     requestAnimationFrame: () => {},
     addEventListener: () => {},
+    notify: () => {},
 };
+globalThis.monaco = window.monaco;
+globalThis.requestAnimationFrame = () => {};
 
 function mockEditor() {
     let pos = { lineNumber: 1, column: 1 };
@@ -139,15 +150,30 @@ function mockEditor() {
 // Test runner
 // ═══════════════════════════════════════════════════════════════════════════════
 let passed = 0, failed = 0;
+const _groups = [];
 
 function test(name, fn) {
     try { fn(); passed++; console.log(`  ✓ ${name}`); }
     catch (e) { failed++; console.error(`  ✗ ${name}\n    ${e.message}`); }
 }
 
+async function testAsync(name, fn) {
+    try { await fn(); passed++; console.log(`  ✓ ${name}`); }
+    catch (e) { failed++; console.error(`  ✗ ${name}\n    ${e.message}`); }
+}
+
 function group(name, fn) {
     console.log(`\n${name}`);
-    fn();
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+        _groups.push(result);
+    }
+}
+
+async function runAll() {
+    for (const g of _groups) await g;
+    console.log(`\n${'─'.repeat(50)}\n${passed} passed, ${failed} failed\n`);
+    process.exit(failed > 0 ? 1 : 0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -156,9 +182,9 @@ function group(name, fn) {
 group('CommandRegistry — white box', async () => {
     const { CommandRegistry } = await import(new URL('../src/renderer/commands.mjs', import.meta.url).href);
 
-    test('constructor loads 28 defaults', () => {
+    test('constructor loads 44 defaults', () => {
         const c = new CommandRegistry();
-        assert.equal(c.all().length, 28);
+        assert.equal(c.all().length, 44);
     });
 
     test('register with no options uses defaults', () => {
@@ -939,6 +965,7 @@ group('KeyboardOverlay — white box', async () => {
         k._handleKey('⇧');
         assert.equal(k.layerName(), 'abc');
         k._handleKey('⇧');
+        // After shift on 'abc' layer, the handled layer switches to ABC
         assert.equal(k.layerName(), 'ABC');
     });
 
@@ -1060,13 +1087,15 @@ group('FileExplorer — white box', async () => {
 
     test('_openSelected with no items is no-op', () => {
         const explorer = new FileExplorer({ registerZone() {}, selectItem() {} }, {}, { openTab() {}, focus() {} });
-        explorer._flatItems = undefined;
+        explorer._flatItems = [];
         explorer._openSelected();
     });
 
     test('_openSelected with dir toggles expansion', () => {
         const explorer = new FileExplorer({ registerZone() {}, selectItem() {} }, {}, { openTab() {}, focus() {} });
         explorer._flatItems = [{ isDir: true, path: '/home/src', el: { classList: { _set: new Set(), add() {}, remove() {}, toggle() {} }, dataset: {}, scrollIntoView() {} } }];
+        explorer._items = [{ name: 'src', path: '/home/src', type: 'directory' }];
+        explorer.el = document.getElementById('file-tree');
         explorer._focusIndex = 0;
         explorer._openSelected();
         assert.ok(explorer._expanded.has('/home/src'));
@@ -1085,8 +1114,8 @@ group('FileExplorer — white box', async () => {
     test('_navigate right on expanded dir moves to first child', () => {
         const explorer = new FileExplorer({ registerZone() {}, selectItem() {} }, {}, { openTab() {}, focus() {} });
         explorer._flatItems = [
-            { isDir: true, path: '/home/src', el: {} },
-            { isDir: false, path: '/home/src/main.js', el: {} },
+            { isDir: true, path: '/home/src', el: { classList: { _set: new Set(), add() {}, remove() {}, toggle() {} }, dataset: {}, scrollIntoView() {} } },
+            { isDir: false, path: '/home/src/main.js', el: { classList: { _set: new Set(), add() {}, remove() {}, toggle() {} }, dataset: {}, scrollIntoView() {} } },
         ];
         explorer._focusIndex = 0;
         explorer._expanded.add('/home/src');
@@ -1112,7 +1141,605 @@ group('FileExplorer — white box', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Summary
+// FIND & REPLACE — white box
 // ═══════════════════════════════════════════════════════════════════════════════
-console.log(`\n${'─'.repeat(50)}\n${passed} passed, ${failed} failed\n`);
-process.exit(failed > 0 ? 1 : 0);
+group('FindReplace — white box', async () => {
+    dom.reset();
+    const { FindReplace } = await import(new URL('../src/renderer/findReplace.mjs', import.meta.url).href);
+    const fr = new FindReplace({ editor: { getModel() { return null; }, getSelection() { return null; }, focus() {} } }, {});
+    test('constructor initializes closed', () => {
+        assert.ok(!fr.isOpen);
+        assert.equal(fr._mode, 'find');
+    });
+    test('open sets isOpen and finds selection', () => {
+        fr.open('find');
+        assert.ok(fr.isOpen);
+        fr.close();
+    });
+    test('open with replace mode shows replace row', () => {
+        fr.open('replace');
+        assert.equal(fr._mode, 'replace');
+        fr.close();
+    });
+    test('close hides overlay', () => {
+        fr.open();
+        fr.close();
+        assert.ok(!fr.isOpen);
+    });
+    test('toggle opens and closes', () => {
+        fr.toggle();
+        assert.ok(fr.isOpen);
+        fr.toggle();
+        assert.ok(!fr.isOpen);
+    });
+    test('_toggleReplace switches mode', () => {
+        fr._toggleReplace();
+        assert.equal(fr._mode, 'replace');
+        fr._toggleReplace();
+        assert.equal(fr._mode, 'find');
+    });
+    test('navigate calls findNext/Prev', () => {
+        fr.open();
+        fr.navigate(-1);
+        fr.navigate(1);
+        fr.close();
+    });
+    test('confirm in find mode calls findNext', () => {
+        fr.open('find');
+        fr.confirm();
+        fr.close();
+    });
+    test('confirm in replace mode calls replace', () => {
+        fr.open('replace');
+        fr.confirm();
+        fr.close();
+    });
+    test('back closes find', () => {
+        fr.open();
+        fr.back();
+        assert.ok(!fr.isOpen);
+    });
+    test('_find with no query clears decorations', () => {
+        fr.open();
+        fr.findInput.value = '';
+        fr._find();
+        fr.close();
+    });
+    test('replaceAll is safe with no matches', () => {
+        fr.open();
+        fr._totalMatches = 0;
+        fr.replaceAll();
+        fr.close();
+    });
+    test('replace is safe with no matches', () => {
+        fr.open();
+        fr._totalMatches = 0;
+        fr.replace();
+        fr.close();
+    });
+    test('_findNext is safe with no matches', () => {
+        fr._totalMatches = 0;
+        fr._findNext();
+    });
+    test('_findPrev is safe with no matches', () => {
+        fr._totalMatches = 0;
+        fr._findPrev();
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SNIPPET MANAGER — white box
+// ═══════════════════════════════════════════════════════════════════════════════
+group('SnippetManager — white box', async () => {
+    dom.reset();
+    const { SnippetManager } = await import(new URL('../src/renderer/snippets.mjs', import.meta.url).href);
+    let insertedText = '';
+    const editor = {
+        insertText(t) { insertedText = t; },
+        editor: {
+            getModel() { return { getLanguageId() { return 'javascript'; } }; },
+            getSelection() { return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }; },
+            executeEdits(src, edits) { insertedText = edits[0]?.text || ''; },
+        },
+    };
+    test('constructor registers provider', () => {
+        const s = new SnippetManager(editor);
+        assert.ok(s._snippets.javascript.length > 0);
+    });
+    test('expandEmmet with known abbreviation works', () => {
+        insertedText = '';
+        const s = new SnippetManager(editor);
+        const result = s.expandEmmet('div');
+        assert.ok(result);
+        assert.ok(insertedText.includes('<div>'));
+    });
+    test('expandEmmet with unknown abbr returns false', () => {
+        insertedText = '';
+        const s = new SnippetManager(editor);
+        const result = s.expandEmmet('zzz_nonexistent');
+        assert.ok(!result);
+    });
+    test('expandEmmet with compound abbr works', () => {
+        const s = new SnippetManager(editor);
+        const result = s.expandEmmet('div>span');
+        assert.ok(result);
+    });
+    test('expandEmmet with bang expands HTML template', () => {
+        const s = new SnippetManager(editor);
+        const result = s.expandEmmet('!');
+        assert.ok(result);
+        assert.ok(insertedText.includes('<!DOCTYPE html>'));
+    });
+    test('insertSnippet finds and inserts by prefix', () => {
+        const s = new SnippetManager(editor);
+        const result = s.insertSnippet('log');
+        assert.ok(result);
+        assert.ok(insertedText.includes('console.log'));
+    });
+    test('insertSnippet with unknown prefix returns false', () => {
+        const s = new SnippetManager(editor);
+        const result = s.insertSnippet('nope_nope');
+        assert.ok(!result);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GIT MANAGER — white box
+// ═══════════════════════════════════════════════════════════════════════════════
+group('GitManager — white box', async () => {
+    dom.reset();
+    const { GitManager } = await import(new URL('../src/renderer/git.mjs', import.meta.url).href);
+
+    test('constructor registers zone', () => {
+        const zones = [];
+        const git = new GitManager({ registerZone(z) { zones.push(z); }, selectItem() {} }, {}, {});
+        assert.equal(zones.length, 1);
+        assert.equal(zones[0].id, 'git');
+    });
+
+    test('refresh populates status list', async () => {
+        const origGit = window.xbox.git;
+        window.xbox.git = {
+            status: async () => [{ path: '/home/test.js', staged: true, untracked: false }],
+            branch: async () => 'main',
+        };
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {} } };
+        git.statusList = { innerHTML: '', querySelectorAll: () => [], children: [] };
+        await git.refresh('/home');
+        assert.equal(git._statusItems.length, 1);
+        window.xbox.git = origGit;
+    });
+
+    test('refresh with no path is safe', async () => {
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {} } };
+        git.statusList = { innerHTML: '', querySelectorAll: () => [], children: [] };
+        await git.refresh();
+    });
+
+    test('stage calls API and refreshes', async () => {
+        const origGit = window.xbox.git;
+        let stagedPath = null;
+        window.xbox.git = {
+            status: async () => [],
+            branch: async () => 'main',
+            stage: async (rp, p) => { stagedPath = p; return {}; },
+        };
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {} } };
+        git.statusList = { innerHTML: '', querySelectorAll: () => [], children: [] };
+        git._repoPath = '/home';
+        await git.stage('/home/test.js');
+        assert.equal(stagedPath, '/home/test.js');
+        window.xbox.git = origGit;
+    });
+
+    test('unstage calls API and refreshes', async () => {
+        const origGit = window.xbox.git;
+        let unstagedPath = null;
+        window.xbox.git = {
+            status: async () => [],
+            branch: async () => 'main',
+            unstage: async (rp, p) => { unstagedPath = p; return {}; },
+        };
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {} } };
+        git.statusList = { innerHTML: '', querySelectorAll: () => [], children: [] };
+        git._repoPath = '/home';
+        await git.unstage('/home/test.js');
+        assert.equal(unstagedPath, '/home/test.js');
+        window.xbox.git = origGit;
+    });
+
+    test('commit calls API and refreshes', async () => {
+        const origGit = window.xbox.git;
+        let commitMsg = null;
+        window.xbox.git = {
+            status: async () => [],
+            branch: async () => 'main',
+            commit: async (rp, m) => { commitMsg = m; return 'ok'; },
+        };
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {} } };
+        git.statusList = { innerHTML: '', querySelectorAll: () => [], children: [] };
+        git._repoPath = '/home';
+        await git.commit('test commit');
+        assert.equal(commitMsg, 'test commit');
+        window.xbox.git = origGit;
+    });
+
+    test('diff opens tab with diff content', async () => {
+        const origGit = window.xbox.git;
+        window.xbox.git = {
+            diff: async () => '--- a/file.js\n+++ b/file.js\n+new line',
+        };
+        let openedPath = null;
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, { focus() {} }, {
+            openTab(p, c) { openedPath = p; },
+            focus() {},
+        });
+        git._repoPath = '/home';
+        await git.diff('/home/file.js');
+        assert.ok(openedPath);
+        window.xbox.git = origGit;
+    });
+
+    test('toggle shows and hides panel', () => {
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.el = { classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } } };
+        git.show();
+        assert.ok(git._visible);
+        git.hide();
+        assert.ok(!git._visible);
+    });
+
+    test('_navigate moves focus index', () => {
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git._statusItems = [{ path: '/a.js', staged: false }, { path: '/b.js', staged: true }];
+        git.statusList = { querySelectorAll: () => [{ classList: { add() {}, remove() {}, toggle() {} } }, { classList: { add() {}, remove() {}, toggle() {} } }] };
+        git._focusIndex = 0;
+        git._navigate(0, 1);
+        assert.equal(git._focusIndex, 1);
+        git._navigate(0, -1);
+        assert.equal(git._focusIndex, 0);
+    });
+
+    test('_openSelected stages or unstages based on status', () => {
+        let action = null;
+        const git = new GitManager({ registerZone() {}, selectItem() {} }, {}, {});
+        git.stage = (p) => { action = 'stage'; };
+        git.unstage = (p) => { action = 'unstage'; };
+        git._statusItems = [{ path: '/a.js', staged: false }];
+        git._focusIndex = 0;
+        git._openSelected();
+        assert.equal(action, 'stage');
+
+        git._statusItems = [{ path: '/a.js', staged: true }];
+        git._focusIndex = 0;
+        git._openSelected();
+        assert.equal(action, 'unstage');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TERMINAL MANAGER — white box
+// ═══════════════════════════════════════════════════════════════════════════════
+group('TerminalManager — white box', async () => {
+    dom.reset();
+    dom.elements['panel-content'] = dom.create('div', { id: 'panel-content' });
+    const { TerminalManager } = await import(new URL('../src/renderer/terminal.mjs', import.meta.url).href);
+
+    test('constructor registers zone', () => {
+        const zones = [];
+        const t = new TerminalManager({ registerZone(z) { zones.push(z); } });
+        assert.equal(zones.length, 1);
+        assert.equal(zones[0].id, 'terminal');
+    });
+
+    test('init creates terminal element', async () => {
+        const t = new TerminalManager({ registerZone() {} });
+        await t.init();
+        assert.ok(t._initialized);
+        assert.ok(t._termEl);
+    });
+
+    test('writeln appends text', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerHTML: '', scrollIntoView() {} };
+        t._writeln('hello');
+        assert.ok(t._termEl.innerHTML.includes('hello'));
+    });
+
+    test('_renderPrompt adds prompt text', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerHTML: '', scrollIntoView() {} };
+        t._renderPrompt();
+        assert.ok(t._termEl.innerHTML.length > 0);
+    });
+
+    test('_insertChar adds character at cursor', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ ', innerHTML: '', scrollIntoView() {} };
+        t._cursorPos = 2;
+        t._currentLine = '';
+        t._insertChar('x');
+        assert.equal(t._currentLine, 'x');
+    });
+
+    test('_backspace removes character', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ x', innerHTML: '', scrollIntoView() {} };
+        t._cursorPos = 3;
+        t._currentLine = 'x';
+        t._backspace();
+        assert.equal(t._currentLine, '');
+    });
+
+    test('_backspace does not delete prompt', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ ', innerHTML: '', scrollIntoView() {} };
+        t._cursorPos = 2;
+        t._currentLine = '';
+        t._backspace();
+        assert.equal(t._cursorPos, 2);
+    });
+
+    test('_cursorLeft/Right moves cursor', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ abc', innerHTML: '', scrollIntoView() {} };
+        t._cursorPos = 5;
+        t._cursorLeft();
+        assert.equal(t._cursorPos, 4);
+        t._cursorRight();
+        assert.equal(t._cursorPos, 5);
+    });
+
+    test('_historyUp/Down cycles history', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ ', innerHTML: '', scrollIntoView() {} };
+        t._history = ['echo 1', 'echo 2'];
+        t._historyIndex = 2;
+        t._historyUp();
+        assert.equal(t._historyIndex, 1);
+        t._historyUp();
+        assert.equal(t._historyIndex, 0);
+        t._historyDown();
+        assert.equal(t._historyIndex, 1);
+        t._historyDown();
+        assert.equal(t._historyIndex, 2);
+        t._historyDown();
+        assert.equal(t._historyIndex, 2); // clamped
+    });
+
+    test('_historyUp with empty history', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ ', innerHTML: '', scrollIntoView() {} };
+        t._history = [];
+        t._historyUp();
+    });
+
+    test('_interrupt adds ^C and re-prompts', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerHTML: '', scrollIntoView() {} };
+        t._interrupt();
+        assert.ok(t._termEl.innerHTML.includes('^C'));
+    });
+
+    test('_clear resets terminal and shows prompt', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerHTML: 'stuff', style: {}, scrollIntoView() {} };
+        t._clear();
+        assert.ok(t._termEl.innerHTML.includes('$'));
+    });
+
+    test('_navigate routes to history/cursor', () => {
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerHTML: '', scrollIntoView() {} };
+        t._history = ['a', 'b'];
+        t._historyIndex = 2;
+        t._navigate(0, -1); // history up
+        assert.equal(t._historyIndex, 1);
+        t._navigate(0, 1); // history down
+        t._navigate(-1, 0); // cursor left
+        t._navigate(1, 0); // cursor right
+    });
+
+    test('_executeLine sends command to PTY', async () => {
+        let written = '';
+        window.xbox.terminal = {
+            connect: async () => ({ ok: true }),
+            write: async (d) => { written = d; },
+            onData: () => {},
+            onError: () => {},
+            onExit: () => {},
+        };
+        const t = new TerminalManager({ registerZone() {} });
+        t._termEl = { innerText: '$ echo hi', innerHTML: '', scrollIntoView() {} };
+        await t._executeLine();
+        assert.ok(written.includes('echo hi'));
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXTENSION MANAGER — white box
+// ═══════════════════════════════════════════════════════════════════════════════
+group('ExtensionManager — white box', async () => {
+    dom.reset();
+    const { ExtensionManager } = await import(new URL('../src/renderer/extensions.mjs', import.meta.url).href);
+    const { CommandRegistry } = await import(new URL('../src/renderer/commands.mjs', import.meta.url).href);
+
+    test('constructor initializes empty', () => {
+        const e = new ExtensionManager(new CommandRegistry());
+        assert.equal(e._extensions.size, 0);
+    });
+
+    test('init sets initialized flag', async () => {
+        window.xbox.ext = window.xbox.ext || {};
+        window.xbox.ext.onMessage = () => {};
+        const e = new ExtensionManager(new CommandRegistry());
+        await e.init();
+        assert.ok(e._initialized);
+    });
+
+    test('loadExtension loads manifest via IPC', async () => {
+        window.xbox.ext = window.xbox.ext || {};
+        window.xbox.ext.load = async () => ({
+            id: 'test-ext', displayName: 'Test Extension', version: '1.0.0',
+            contributes: { commands: [{ command: 'hello', label: 'Hello' }] },
+        });
+        window.xbox.ext.onMessage = () => {};
+        const e = new ExtensionManager(new CommandRegistry());
+        await e.init();
+        const ext = await e.loadExtension('/ext/test/package.json');
+        assert.ok(ext);
+        assert.equal(ext.id, 'test-ext');
+    });
+
+    test('loadExtension handles failure gracefully', async () => {
+        window.xbox.ext.load = async () => { throw new Error('fail'); };
+        window.xbox.ext.onMessage = () => {};
+        const e = new ExtensionManager(new CommandRegistry());
+        await e.init();
+        const result = await e.loadExtension('/bad/path.json');
+        assert.equal(result, null);
+    });
+
+    test('loadFromDirectory loads multiple extensions', async () => {
+        window.xbox.ext.load = async () => null;
+        window.xbox.ext.loadDir = async () => ({
+            extensions: [
+                { id: 'ext1', displayName: 'Ext 1', contributes: {} },
+                { id: 'ext2', displayName: 'Ext 2', contributes: {} },
+            ],
+        });
+        window.xbox.ext.onMessage = () => {};
+        const e = new ExtensionManager(new CommandRegistry());
+        await e.init();
+        const exts = await e.loadFromDirectory('/exts');
+        assert.equal(exts.length, 2);
+    });
+
+    test('getExtension returns null for unknown', () => {
+        const e = new ExtensionManager(new CommandRegistry());
+        assert.equal(e.getExtension('nope'), null);
+    });
+
+    test('getAllExtensions returns loaded extensions', () => {
+        const e = new ExtensionManager(new CommandRegistry());
+        assert.equal(e.getAllExtensions().length, 0);
+    });
+
+    test('sendMessage to extension does not throw', async () => {
+        window.xbox.ext.request = async () => {};
+        const e = new ExtensionManager(new CommandRegistry());
+        await e.sendMessage('test-ext', { type: 'ping' });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMMAND REGISTRY — new commands exist
+// ═══════════════════════════════════════════════════════════════════════════════
+group('CommandRegistry — new feature commands', async () => {
+    const { CommandRegistry } = await import(new URL('../src/renderer/commands.mjs', import.meta.url).href);
+
+    test('has find.open command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('find.open'));
+    });
+
+    test('has find.replace command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('find.replace'));
+    });
+
+    test('has file.new command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('file.new'));
+    });
+
+    test('has file.saveAs command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('file.saveAs'));
+    });
+
+    test('has snippet.insert command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('snippet.insert'));
+    });
+
+    test('has emmet.expand command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('emmet.expand'));
+    });
+
+    test('has split.horizontal command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('split.horizontal'));
+    });
+
+    test('has git.toggle command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('git.toggle'));
+    });
+
+    test('has terminal.focus command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('terminal.focus'));
+    });
+
+    test('has extensions.show command', () => {
+        const c = new CommandRegistry();
+        assert.ok(c.get('extensions.show'));
+    });
+
+    test('default count increased to 44', () => {
+        const c = new CommandRegistry();
+        assert.equal(c.all().length, 44);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPLIT PANE MANAGER — white box (limited Monaco mock)
+// ═══════════════════════════════════════════════════════════════════════════════
+group('SplitPaneManager — white box', async () => {
+    dom.reset();
+    dom.elements['editor-container'] = dom.create('div', { id: 'editor-container' });
+    const { SplitPaneManager } = await import(new URL('../src/renderer/splitPanes.mjs', import.meta.url).href);
+
+    test('constructor registers zone', () => {
+        const zones = [];
+        const focus = { registerZone(z) { zones.push(z); } };
+        const s = new SplitPaneManager({}, focus);
+        assert.equal(zones.length, 1);
+        assert.equal(zones[0].id, 'editor-split');
+    });
+
+    test('initial state is not split', () => {
+        const s = new SplitPaneManager({}, { registerZone() {} });
+        assert.ok(!s._isSplit);
+    });
+
+    test('nextPane loops correctly with single pane', () => {
+        const s = new SplitPaneManager({}, { registerZone() {} });
+        s._editors = [{ editor: { focus() {} } }];
+        s.nextPane();
+        assert.equal(s._activePane, 0);
+    });
+
+    test('_navigate is safe when not split', () => {
+        const s = new SplitPaneManager({}, { registerZone() {} });
+        s._navigate(1, 0);
+    });
+
+    test('focusPane handles out of bounds', () => {
+        const s = new SplitPaneManager({}, { registerZone() {} });
+        s.focusPane(-1);
+        s.focusPane(99);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Run all
+// ═══════════════════════════════════════════════════════════════════════════════
+await runAll();

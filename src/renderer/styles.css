@@ -89,3 +89,53 @@ html, body { height: 100%; overflow: hidden; background: #1e1e1e; color: #d4d4d4
 
 .focus-ring { outline: 2px solid #1a8ad4 !important; outline-offset: 2px !important; }
 :focus { outline: none; }
+
+/* ─── Find / Replace ───────────────────────────────────────────────────────── */
+#find-panel { width: 480px; background: #252526; border: 1px solid #3c3c3c; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; overflow: hidden; padding: 8px; gap: 6px; }
+#find-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #858585; }
+#find-toggle-replace { cursor: pointer; padding: 2px 8px; border-radius: 4px; }
+#find-toggle-replace:hover { background: #2d2d2d; }
+#find-close-btn { cursor: pointer; font-size: 14px; padding: 0 4px; }
+#find-input, #replace-input { width: 100%; padding: 6px 10px; background: #1e1e1e; border: 1px solid #3c3c3c; color: #d4d4d4; font-size: 13px; font-family: monospace; outline: none; border-radius: 4px; }
+#find-input:focus, #replace-input:focus { border-color: #1a8ad4; }
+#find-match-count { font-size: 11px; color: #858585; text-align: center; }
+#find-actions { display: flex; gap: 4px; justify-content: center; }
+#find-actions button { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+#find-actions button:hover { background: #094771; }
+#find-replace-row { display: none; gap: 4px; }
+.find-match { background: rgba(255, 204, 0, 0.2); }
+.find-match-current { background: rgba(255, 204, 0, 0.5); }
+
+/* ─── Sidebar Tabs (Explorer / Git / Extensions) ───────────────────────── */
+#sidebar-tabs { display: flex; border-bottom: 1px solid #3c3c3c; padding: 0; font-size: 11px; }
+.st-panel-tab { flex: 1; text-align: center; padding: 4px 0; color: #858585; cursor: pointer; border-bottom: 2px solid transparent; user-select: none; text-transform: uppercase; letter-spacing: 0.3px; }
+.st-panel-tab.active { color: #d4d4d4; border-bottom-color: #1a8ad4; background: #2d2d2d; }
+#sidebar-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.sidebar-panel { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.sidebar-panel.hidden { display: none; }
+.sidebar-btn { background: #2d2d2d; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px; margin: 4px; }
+.sidebar-btn:hover { background: #094771; }
+
+/* ─── Git Panel ────────────────────────────────────────────────────────── */
+#git-header { display: flex; align-items: center; padding: 4px 8px; border-bottom: 1px solid #3c3c3c; gap: 6px; }
+#git-branch { font-size: 12px; color: #4ec9b0; flex: 1; font-family: monospace; }
+#git-status-list { flex: 1; overflow-y: auto; }
+.git-item { padding: 4px 12px; font-size: 13px; font-family: monospace; color: #d4d4d4; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.git-item:hover { background: #2d2d2d; }
+.git-item.focused { background: #094771; color: #fff; outline: 2px solid #1a8ad4; outline-offset: -2px; }
+.git-item.empty { color: #858585; cursor: default; }
+
+/* ─── Extensions Panel ─────────────────────────────────────────────────── */
+#ext-header { display: flex; align-items: center; padding: 4px 8px; border-bottom: 1px solid #3c3c3c; }
+#ext-list { flex: 1; overflow-y: auto; }
+.ext-item { padding: 5px 12px; font-size: 13px; color: #d4d4d4; border-bottom: 1px solid #2d2d2d; }
+.ext-item .ext-ver { color: #858585; font-size: 11px; margin-left: 8px; }
+
+/* ─── Split Panes ──────────────────────────────────────────────────────── */
+.split-pane { display: flex; flex-direction: column; overflow: hidden; transition: box-shadow 0.15s; }
+.split-pane.active { box-shadow: inset 0 0 0 2px #1a8ad4; }
+
+/* ─── Terminal Widget ──────────────────────────────────────────────────── */
+.terminal-widget { width: 100%; height: 100%; padding: 4px 8px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; color: #d4d4d4; background: #1e1e1e; white-space: pre-wrap; word-wrap: break-word; outline: none; overflow-y: auto; cursor: text; line-height: 1.4; }
+.terminal-widget:empty::before { content: '> Terminal ready'; color: #858585; }
+.terminal-widget:focus { box-shadow: inset 0 0 0 2px #1a8ad4; }
